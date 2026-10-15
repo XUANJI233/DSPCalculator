@@ -56,11 +56,54 @@ namespace DSPCalculator.UI
         public Text incText;
 
         public Image cbFinishedMark;
+        public GameObject cbShiftHintObj; // 按住Shift时，勾选框旁边显示的“仅本级”提示
         public GameObject GenBpButtonObj; // 生成蓝图按钮
 
-        public UIItemNode(ItemNode node, UICalcWindow calcWindow)
+        // 部分建成的物品会被拆成两行：未建成的部分在正常位置，已建成的部分在最下方的“已完成”区域
+        public const int PART_FULL = 0; // 没有拆分，显示全部
+        public const int PART_REMAINING = 1; // 只显示未建成的部分
+        public const int PART_BUILT = 2; // 只显示已建成的部分
+        public int part;
+
+        /// <summary>
+        /// 这一行代表的配方数量（与RecipeInfo.count同单位）
+        /// </summary>
+        public double partCount
+        {
+            get
+            {
+                RecipeInfo recipeInfo = itemNode?.mainRecipe;
+                if (recipeInfo == null)
+                    return 0;
+                if (part == PART_FULL)
+                    return recipeInfo.count;
+                double built = parentCalcWindow.solution.userPreference.GetBuiltCount(recipeInfo);
+                if (part == PART_BUILT)
+                    return built;
+                return Math.Max(0, recipeInfo.count - built);
+            }
+        }
+
+        /// <summary>
+        /// 这一行显示的产出速度。未建成的部分包含其他配方产出及原矿补充的部分
+        /// </summary>
+        public double partOutputSpeed
+        {
+            get
+            {
+                if (part == PART_FULL || itemNode.mainRecipe == null)
+                    return itemNode.satisfiedSpeed;
+                double builtOutput = itemNode.mainRecipe.GetOutputSpeedByChangedCount(itemNode.itemId, parentCalcWindow.solution.userPreference.GetBuiltCount(itemNode.mainRecipe));
+                if (part == PART_BUILT)
+                    return builtOutput;
+                return Math.Max(0, itemNode.satisfiedSpeed - builtOutput);
+            }
+        }
+
+        public UIItemNode(ItemNode node, UICalcWindow calcWindow, int part = PART_FULL)
         {
             // 如果公共资源尚未被初始化，则初始化
+            this.part = part;
 
             assemblerUIButtons = new Dictionary<int, UIButton>();
             proliferatorUsedButtons = new Dictionary<int, UIButton>();
@@ -139,21 +182,21 @@ namespace DSPCalculator.UI
                 iconObj.GetComponent<UIButton>().tips.corner = 3;
                 iconObj.GetComponent<UIButton>().tips.delay = 0.1f;
 
-                string finalSpeedStr = Utils.KMG(itemNode.satisfiedSpeed);
+                string finalSpeedStr = Utils.KMG(partOutputSpeed);
                 outputText.text = finalSpeedStr;
                 if (itemNode.mainRecipe != null && itemNode.mainRecipe.useIA)
                 {
                     outputText.supportRichText = true;
-                    outputText.text += "<size=12>\n" + "组装厂输入".Translate() + "" + itemNode.mainRecipe.GetIAInputCount().ToString("N0") + "</size>";
+                    outputText.text += "<size=12>\n" + "组装厂输入".Translate() + "" + itemNode.mainRecipe.GetIAInputCount(partCount).ToString("N0") + "</size>";
                 }
 
                 string speedDetails = "";
-                if (itemNode.byProductRecipes.Count > 0) // 说明产出有多个来源
+                if (itemNode.byProductRecipes.Count > 0 && part != PART_BUILT) // 说明产出有多个来源（已建成的部分只包含主配方的产出）
                 {
                     if (itemNode.mainRecipe != null)
                     {
                         if (mainRecipeActive)
-                            speedDetails += "来自calc".Translate() + "当前配方".Translate() + " " + Utils.KMG(itemNode.mainRecipe.GetOutputSpeedByItemId(itemId));
+                            speedDetails += "来自calc".Translate() + "当前配方".Translate() + " " + Utils.KMG(itemNode.mainRecipe.GetOutputSpeedByChangedCount(itemId, partCount));
                     }
                     foreach (var recipeInfo in itemNode.byProductRecipes)
                     {
@@ -165,7 +208,7 @@ namespace DSPCalculator.UI
                 }
 
 
-                if (itemNode.satisfiedSpeed - itemNode.needSpeed > 0.001f && parentCalcWindow.solution.CanShowOverflow(itemId)) // 说明有溢出
+                if (itemNode.satisfiedSpeed - itemNode.needSpeed > 0.001f && parentCalcWindow.solution.CanShowOverflow(itemId) && part != PART_BUILT) // 说明有溢出
                 {
                     overflowNoteTextObj.SetActive(true); // 溢出提示要显示出来
                     if (speedDetails.Length > 0)
@@ -528,10 +571,18 @@ namespace DSPCalculator.UI
                     GameObject finishedMarkObj = GameObject.Instantiate(UICalcWindow.checkBoxObj, obj.transform);
                     finishedMarkObj.name = "finished-mark";
                     cbFinishedMark = finishedMarkObj.GetComponent<Image>();
-                    finishedMarkObj.transform.Find("text").gameObject.SetActive(false);
+                    // 复用勾选框自带的文字，作为按住Shift时的“仅本级”提示
+                    cbShiftHintObj = finishedMarkObj.transform.Find("text").gameObject;
+                    Text shiftHintText = cbShiftHintObj.GetComponent<Text>();
+                    shiftHintText.text = "仅本级calc".Translate();
+                    shiftHintText.color = UICalcWindow.TextWarningColor;
+                    shiftHintText.fontSize = 14;
+                    cbShiftHintObj.SetActive(false);
                     finishedMarkObj.GetComponent<RectTransform>().anchoredPosition3D = new Vector3(10, 22, 0);
                     finishedMarkObj.GetComponent<Button>().onClick.AddListener(OnFinishedMarkCheckboxClick);
-                    finishedMarkObj.GetComponent<UIButton>().tips.tipTitle = "标记为已完成".Translate();
+                    finishedMarkObj.GetComponent<UIButton>().tips.tipTitle = (part == PART_BUILT ? "取消已完成" : "标记为已完成").Translate();
+                    finishedMarkObj.GetComponent<UIButton>().tips.tipText = (part == PART_BUILT ? "取消已完成说明" : "标记为已完成说明").Translate();
+                    finishedMarkObj.GetComponent<UIButton>().tips.width = 240;
                     finishedMarkObj.GetComponent<UIButton>().tips.delay = 0.3f;
                     finishedMarkObj.GetComponent<UIButton>().tips.corner = 3;
 
@@ -682,12 +733,9 @@ namespace DSPCalculator.UI
             if (!isMoving)
             {
                 Color targetColor = backgroundImageColor;
-                if (itemNode.mainRecipe != null)
+                if (itemNode.mainRecipe != null && IsShownAsFinished())
                 {
-                    if (parentCalcWindow.solution.userPreference.finishedRecipes.ContainsKey(itemNode.mainRecipe.ID))
-                    {
-                        targetColor = backgroundImageFinishedColor;
-                    }
+                    targetColor = backgroundImageFinishedColor;
                 }
                 if (backgroundImg.color.a > targetColor.a)
                 {
@@ -702,6 +750,22 @@ namespace DSPCalculator.UI
                 CalcInNewWinIconObj.SetActive(true);
             else if (!parentCalcWindow.ShiftState && CalcInNewWinIconObj != null && CalcInNewWinIconObj.activeSelf)
                 CalcInNewWinIconObj.SetActive(false);
+
+            // 按住Shift时，提示点击勾选框只会作用于本级
+            if (cbShiftHintObj != null && cbShiftHintObj.activeSelf != parentCalcWindow.ShiftState)
+                cbShiftHintObj.SetActive(parentCalcWindow.ShiftState);
+        }
+
+        /// <summary>
+        /// 这一行是否显示为已完成（勾选、灰色背景）
+        /// </summary>
+        public bool IsShownAsFinished()
+        {
+            if (part == PART_BUILT)
+                return true;
+            if (part == PART_REMAINING)
+                return false;
+            return parentCalcWindow.solution.userPreference.IsRecipeFinished(itemNode.mainRecipe);
         }
 
         public void RefreshAssemblerDisplay(bool refreshGlobal = true)
@@ -759,7 +823,7 @@ namespace DSPCalculator.UI
                     assemblerCountTextObj.SetActive(true);
                     if (IASpecializationIconGroup != null)
                         IASpecializationIconGroup.SetActive(false);
-                    double finalCount = recipeInfo.count / assemblerData.speed / 60; // 除以60是因为计算都是以每s计算的，最终转换成工厂数量等都要按min，所以都是60分之一。
+                    double finalCount = partCount / assemblerData.speed / 60; // 除以60是因为计算都是以每s计算的，最终转换成工厂数量等都要按min，所以都是60分之一。拆分显示时只计算这一行代表的部分
                     if (!itemNode.mainRecipe.isInc && itemNode.mainRecipe.incLevel >= 0 && itemNode.mainRecipe.incLevel < Cargo.accTableMilli.Length)
                     {
                         finalCount = finalCount / (1.0 + Utils.GetAccMilli(itemNode.mainRecipe.incLevel, parentCalcWindow.solution.userPreference));
@@ -767,6 +831,12 @@ namespace DSPCalculator.UI
                     if (parentCalcWindow.solution.userPreference.roundUpAssemgblerNum) // 根据生产设施数量是否向上取整的设置进行
                     {
                         long ceilingCount = (long)Math.Ceiling(finalCount);
+                        // 拆分显示时，与右侧面板一致：已建成部分向上取整，未建成部分 = 总数取整 - 已建成取整
+                        long builtCeilingCount = Utils.CeilBuilt(preference.GetBuiltAssemblerCount(recipeInfo));
+                        if (part == PART_BUILT)
+                            ceilingCount = builtCeilingCount;
+                        else if (part == PART_REMAINING)
+                            ceilingCount = Math.Max(0, (long)Math.Ceiling(recipeInfo.assemblerCount) - builtCeilingCount);
                         assemblerCountText.text = "× " + Utils.KMG(ceilingCount);
                         if (ceilingCount != finalCount && ceilingCount - finalCount > 0.005)
                         {
@@ -1069,19 +1139,48 @@ namespace DSPCalculator.UI
         /// </summary>
         public void OnFinishedMarkCheckboxClick()
         {
-            if (itemNode.mainRecipe != null && itemNode.mainRecipe.count > 0.001f)
+            RecipeInfo recipeInfo = itemNode.mainRecipe;
+            if (recipeInfo != null && recipeInfo.count > 0.001f)
             {
-                if (parentCalcWindow.solution.userPreference.finishedRecipes.ContainsKey(itemNode.mainRecipe.ID))
-                    parentCalcWindow.solution.userPreference.finishedRecipes.Remove(itemNode.mainRecipe.ID);
-                else
-                    parentCalcWindow.solution.userPreference.finishedRecipes[itemNode.mainRecipe.ID] = 1;
-
-                foreach (var uiNode in parentCalcWindow.uiItemNodes)
+                SolutionTree solution = parentCalcWindow.solution;
+                UserPreference preference = solution.userPreference;
+                int itemId = itemNode.itemId;
+                bool onlyThisLevel = parentCalcWindow.ShiftState;
+                if (part != PART_BUILT) // 标记为完成
                 {
-                    uiNode.RefreshFinishedMark();
+                    if (onlyThisLevel) // 仅本级：只将这一级配方全部标记为已建成
+                    {
+                        preference.builtRecipes[recipeInfo.ID] = recipeInfo.count;
+                        UIRealtimeTip.Popup("已标记本级完成提示".Translate(), false);
+                    }
+                    else // 整条完成：将本级尚未建成的部分，连同上游产线中属于它的那一份，作为一条产线记录下来
+                    {
+                        double chainCount = recipeInfo.count - preference.GetBuiltCount(recipeInfo);
+                        double chainSpeed = recipeInfo.GetOutputSpeedByChangedCount(itemId, chainCount);
+                        Dictionary<int, double> chainCounts = solution.CalcChainRecipeCounts(itemId, chainSpeed)
+                            .Where(kv => solution.recipeInfos.ContainsKey(kv.Key))
+                            .ToDictionary(kv => kv.Key, kv => kv.Value);
+                        chainCounts[recipeInfo.ID] = chainCount; // 本级一定是恰好补满
+                        preference.AddBuiltChain(itemId, chainCounts);
+                        UIRealtimeTip.Popup("已标记整条完成提示".Translate(), false);
+                    }
                 }
-                parentCalcWindow.RefreshAssemblerDemandsDisplay();
-                parentCalcWindow.RefreshProgressCircle();
+                else // 取消完成
+                {
+                    if (!onlyThisLevel && preference.builtChains.ContainsKey(itemId)) // 这是一条整条完成的产线的终点：整条撤销，上游各级自动合并回去
+                    {
+                        preference.builtChains.Remove(itemId);
+                        preference.builtRecipes.Remove(recipeInfo.ID);
+                        UIRealtimeTip.Popup("已取消整条完成提示".Translate(), false);
+                    }
+                    else // 仅取消本级（包括它在其他产线中被计入的部分），不影响上游
+                    {
+                        preference.RemoveBuiltRecipe(recipeInfo.ID);
+                        UIRealtimeTip.Popup("已取消本级完成提示".Translate(), false);
+                    }
+                }
+
+                parentCalcWindow.RefreshBuiltDisplay();
             }
         }
 
@@ -1092,7 +1191,7 @@ namespace DSPCalculator.UI
         {
             if (itemNode.mainRecipe != null && cbFinishedMark != null)
             {
-                if (parentCalcWindow.solution.userPreference.finishedRecipes.ContainsKey(itemNode.mainRecipe.ID))
+                if (IsShownAsFinished())
                 {
                     cbFinishedMark.sprite = UICalcWindow.checkboxOnSprite;
                     backgroundImg.color = backgroundImageFinishedColor;
@@ -1114,8 +1213,8 @@ namespace DSPCalculator.UI
             if (parentCalcWindow.uiItemNodeOrders.ContainsKey(itemId))
             {
                 int order = parentCalcWindow.uiItemNodeOrders[itemId];
-                int totalCount = parentCalcWindow.uiItemNodeOrders.Count;
-                if (order >= 0 && order < parentCalcWindow.uiItemNodeOrders.Count)
+                int totalCount = parentCalcWindow.uiItemNodes.Count;
+                if (order >= 0 && order < parentCalcWindow.uiItemNodes.Count)
                 {
                     // 跳转到目标位置，小于8不需要跳转
                     if (totalCount >= 8)
@@ -1182,7 +1281,7 @@ namespace DSPCalculator.UI
         {
             UICalcWindow calcWindow = WindowsManager.OpenOne(true, 1000, 0);
             int itemId = itemNode.itemId;
-            long requiredSpeed = (long)Math.Ceiling(itemNode.satisfiedSpeed);
+            long requiredSpeed = (long)Math.Ceiling(partOutputSpeed);
 
             // 打开新窗口后，该物品必须默认不被视为原矿，否则对于默认视为原矿的材料没有意义
             calcWindow.solution.userPreference = parentCalcWindow.solution.userPreference.DeepCopy();
@@ -1230,7 +1329,11 @@ namespace DSPCalculator.UI
             if (itemNode.mainRecipe != null && !itemNode.mainRecipe.useIA && BpProcessor.enabled)
             {
                 if (bpProcessor == null || forceInitNew)
-                    bpProcessor = new BpProcessor(itemNode.mainRecipe, parentCalcWindow.solution);
+                {
+                    // 拆分显示时，蓝图只针对这一行代表的部分（未建成或已建成）生成；未拆分时按全部生成
+                    RecipeInfo bpRecipeInfo = part == PART_FULL ? itemNode.mainRecipe : itemNode.mainRecipe.CloneWithCount(partCount);
+                    bpProcessor = new BpProcessor(bpRecipeInfo, parentCalcWindow.solution);
+                }
             }
             if (bpProcessor != null)
                 bpProcessor.PreProcess();

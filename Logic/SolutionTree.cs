@@ -91,17 +91,21 @@ namespace DSPCalculator.Logic
             else
                 targets[0].speed = targetSpeed;
             ClearTree();
-            userPreference.ClearWhenChangeTarget();
+            // 已建量是实际建成的设施，修改速度时不再清空
             tempNotShrinkRoot = false;
             return Solve();
         }
 
         public bool SetTargetAndSolve(int index, int targetItem, double targetSpeed)
         {
+            int oriItem = targets.Count > index ? targets[index].itemId : 0;
             if(AddOrUpdateTarget(index,targetItem,targetSpeed))
             {
                 ClearTree();
-                userPreference.ClearWhenChangeTarget();
+                // 只有单目标时更换了目标产物（相当于开始一个新的计算）才清空已建量
+                // 注意oriItem为0时不清空：增产剂子求解器与主求解器共享builtRecipes
+                if (oriItem > 0 && oriItem != targetItem && targets.Count <= 1)
+                    userPreference.ClearWhenChangeTarget();
                 tempNotShrinkRoot = false;
                 return Solve();
             }
@@ -1010,6 +1014,61 @@ namespace DSPCalculator.Logic
                 return true;
         }
 
+        /// <summary>
+        /// 单独以某物品为目标求解，返回其整条产线（含上游）中各配方需要的量，用于“整条完成”
+        /// </summary>
+        public Dictionary<int, double> CalcChainRecipeCounts(int itemId, double speed)
+        {
+            Dictionary<int, double> result = new Dictionary<int, double>();
+            if (speed <= 0)
+                return result;
+            SolutionTree chain = new SolutionTree();
+            chain.userPreference = userPreference.ShallowCopy(); // 使用相同的配方、增产等设置，保证与本产线选用的配方一致
+            chain.userPreference.globalUseIA = userPreference.globalUseIA; // ShallowCopy不包含星际组装厂设置，而它会影响配方数量
+            chain.userPreference.globalIAType = userPreference.globalIAType;
+            chain.targets.Add(new ItemTarget(itemId, speed));
+            if (chain.Solve())
+            {
+                foreach (var kv in chain.recipeInfos)
+                {
+                    if (kv.Value.count > 0)
+                        result[kv.Key] = kv.Value.count;
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// 已建成部分的产出（不含目标产物），key为物品id
+        /// </summary>
+        public Dictionary<int, double> GetBuiltOutputs()
+        {
+            HashSet<int> targetIds = new HashSet<int>();
+            foreach (var target in targets)
+                targetIds.Add(target.itemId);
+
+            Dictionary<int, double> outputs = new Dictionary<int, double>();
+            foreach (var kv in recipeInfos)
+            {
+                RecipeInfo recipeInfo = kv.Value;
+                double built = userPreference.GetBuiltCount(recipeInfo);
+                if (built <= 0)
+                    continue;
+                foreach (var product in recipeInfo.productIndices)
+                {
+                    int productId = product.Key;
+                    if (targetIds.Contains(productId))
+                        continue;
+                    double speed = recipeInfo.GetOutputSpeedByChangedCount(productId, built);
+                    if (outputs.ContainsKey(productId))
+                        outputs[productId] += speed;
+                    else
+                        outputs[productId] = speed;
+                }
+            }
+            return outputs;
+        }
+
         public void Export(BinaryWriter w)
         {
             w.Write(DSPCalculatorPlugin.VERSIONINT);
@@ -1023,7 +1082,7 @@ namespace DSPCalculator.Logic
                 else
                     w.Write(targets[i].speed);
             }
-            userPreference.Export(w);
+            userPreference.Export(w, recipeInfos);
         }
 
         public void Import(BinaryReader r)

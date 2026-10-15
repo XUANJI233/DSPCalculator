@@ -94,6 +94,19 @@ namespace DSPCalculator
             RegisterTranslation("混带需求", "Mix-Belt Demands", "混带需求", "Mix-Belt Demands");
             RegisterTranslation("条calc", "lines", "条", "lines");
             RegisterTranslation("标记为已完成", "Mark as completed", "标记为已完成", "Mark as completed");
+            RegisterTranslation("标记为已完成说明", "Click: mark the whole production line as completed, i.e. this item together with its share of every upstream line. The completed part is moved to the bottom, and the rows above only show what is still left to build.\nShift + Click: mark only this recipe as completed.\nThe raw resources demands always show the whole factory's final demands.", "点击：整条完成，即本物品连同它在上游各产线中的那一份一起标记为已完成。已完成的部分会移到最下方，上方只显示还需要建造的部分。\nShift + 点击：仅本级完成。\n原材料需求始终显示整个工厂建成后的总需求。", "Click: mark the whole production line as completed, i.e. this item together with its share of every upstream line. The completed part is moved to the bottom, and the rows above only show what is still left to build.\nShift + Click: mark only this recipe as completed.\nThe raw resources demands always show the whole factory's final demands.");
+            RegisterTranslation("取消已完成", "Unmark completed", "取消已完成", "Unmark completed");
+            RegisterTranslation("取消已完成说明", "Click: if this item was completed as a whole line, undo the whole line, and every upstream part merges back into the rows above. Otherwise only this recipe is undone.\nShift + Click: undo only this recipe.", "点击：如果它是以整条完成标记的，就整条撤销，上游各级自动合并回上方；否则只撤销本级。\nShift + 点击：仅撤销本级。", "Click: if this item was completed as a whole line, undo the whole line, and every upstream part merges back into the rows above. Otherwise only this recipe is undone.\nShift + Click: undo only this recipe.");
+            RegisterTranslation("仅本级calc", "This level only", "仅本级", "This level only");
+            RegisterTranslation("已标记整条完成提示", "Marked the whole production line as completed", "已将整条产线标记为完成", "Marked the whole production line as completed");
+            RegisterTranslation("已标记本级完成提示", "Marked only this recipe as completed", "已将本级标记为完成", "Marked only this recipe as completed");
+            RegisterTranslation("已取消整条完成提示", "Undid the whole production line", "已撤销整条产线，上游已合并回去", "Undid the whole production line");
+            RegisterTranslation("已取消本级完成提示", "Undid only this recipe", "已撤销本级", "Undid only this recipe");
+            RegisterTranslation("已完成标题calc", "Completed ({0})", "已完成（{0}）", "Completed ({0})");
+            RegisterTranslation("已完成区域说明", "Click a checkbox below to undo, and that part merges back into the rows above. Hold Shift to undo only that recipe.", "点击下方的勾选框可撤销，撤销后会自动合并回上方。按住 Shift 点击只撤销本级。", "Click a checkbox below to undo, and that part merges back into the rows above. Hold Shift to undo only that recipe.");
+            RegisterTranslation("剩余calc", "Remaining", "剩余", "Remaining");
+            RegisterTranslation("总需求calc", "Total", "总需求", "Total");
+            RegisterTranslation("已建产线产出", "Output of Built Lines", "已建产线产出", "Output of Built Lines");
 
 
             RegisterTranslation("使用星际组装厂按钮标题", "Interstellar Assembly", "星际组装厂", "Interstellar Assembly");
@@ -292,6 +305,11 @@ namespace DSPCalculator
             RegisterTranslationByLang(lcid,"混带需求", "Demandas de Esteira Mista");
             RegisterTranslationByLang(lcid,"条calc", "linhas");
             RegisterTranslationByLang(lcid,"标记为已完成", "Marcar como Concluído");
+            RegisterTranslationByLang(lcid,"剩余calc", "Restante");
+            RegisterTranslationByLang(lcid,"总需求calc", "Total");
+            RegisterTranslationByLang(lcid,"已建产线产出", "Produção das Linhas Construídas");
+            RegisterTranslationByLang(lcid,"仅本级calc", "Apenas este nível");
+            RegisterTranslationByLang(lcid,"已完成标题calc", "Concluído ({0})");
 
 
             RegisterTranslationByLang(lcid,"使用星际组装厂按钮标题", "Montadora Interestelar");

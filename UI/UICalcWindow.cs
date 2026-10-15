@@ -120,6 +120,7 @@ namespace DSPCalculator.UI
         public List<UINode> uiSideItemNodes;
         public ScrollRect contentScrollRect; // 可滚动的rect
         public Transform contentTrans; // 用于放置UIItemNode的GameObject的父级物体的transform
+        public GameObject builtHeaderObj; // 主区域中“已完成”区域的标题行
         public GameObject targetProductIconObj;
         public GameObject speedInputObj; // 输入产物速度的
         public GameObject perMinTextObj; // /min 文本
@@ -1645,7 +1646,8 @@ namespace DSPCalculator.UI
                 }
                 double forceSpeed;
                 double.TryParse(speedInputObj.GetComponent<InputField>().text, out forceSpeed);
-                solution.ReSolve(forceSpeed);
+                if (solution.ReSolve(forceSpeed))
+                    solution.userPreference.ResolveFullBuiltMarks(solution.recipeInfos); // 粘贴/载入的旧版本已完成标记，按本次求解结果转换为实际已建量
                 RefreshAll();
             }
 
@@ -1661,9 +1663,9 @@ namespace DSPCalculator.UI
                     float distance = targetVerticalPosition - contentScrollRect.verticalNormalizedPosition;
                     float minMove = 0.01f;
                     float moveRatio = 0.1f;
-                    if(uiItemNodeOrders.Count > 12)
+                    if(uiItemNodes.Count > 12)
                     {
-                        float shrink = uiItemNodeOrders.Count * 1.0f / 12;
+                        float shrink = uiItemNodes.Count * 1.0f / 12;
                         minMove *= (0.2f + 0.8f /shrink);
                         moveRatio *= (0.8f + 0.2f / shrink);
                     }
@@ -1920,6 +1922,79 @@ namespace DSPCalculator.UI
             }
         }
 
+        /// <summary>
+        /// 已建量变化后，刷新所有相关显示（不需要重新求解）
+        /// </summary>
+        public void RefreshBuiltDisplay()
+        {
+            // 已建成部分会拆分/合并节点，需要重建节点列表，同时尽量保持当前的滚动位置
+            Vector2 contentPos = contentScrollRect.content.anchoredPosition;
+            RefreshProductContent();
+            RefreshResourceNeedAndByProductContent();
+            RefreshAssemblerDemandsDisplay();
+            RefreshProgressCircle();
+            refreshIndex = 0; // 重新为新节点预处理蓝图
+            contentScrollRect.content.anchoredPosition = contentPos;
+        }
+
+        /// <summary>
+        /// 在主区域添加一行产物节点
+        /// </summary>
+        public void AddProductUINode(ItemNode curNode, int part)
+        {
+            UIItemNode uiNode = new UIItemNode(curNode, this, part);
+            if (!uiItemNodeOrders.ContainsKey(curNode.itemId)) // 同一物品拆成两行时，定位到靠上（未建成）的那一行
+                uiItemNodeOrders[curNode.itemId] = uiItemNodes.Count;
+            uiItemNodes.Add(uiNode);
+        }
+
+        /// <summary>
+        /// 添加产物节点，如果有已建成的部分则拆分：未建成的部分在这里显示，已建成的部分加入builtNodes，最后显示在最下方
+        /// </summary>
+        public void AddProductUINodeSplit(ItemNode curNode, List<ItemNode> builtNodes)
+        {
+            RecipeInfo recipeInfo = curNode.mainRecipe;
+            UserPreference preference = solution.userPreference;
+            if (recipeInfo == null || recipeInfo.count <= 0.001f || preference.GetBuiltCount(recipeInfo) <= recipeInfo.count * 1e-6)
+            {
+                AddProductUINode(curNode, UIItemNode.PART_FULL);
+                return;
+            }
+            if (!preference.IsRecipeFinished(recipeInfo))
+                AddProductUINode(curNode, UIItemNode.PART_REMAINING);
+            builtNodes.Add(curNode);
+        }
+
+        /// <summary>
+        /// 主区域中“已完成”区域的标题行
+        /// </summary>
+        public void CreateBuiltHeader(int count)
+        {
+            builtHeaderObj = new GameObject("built-header");
+            builtHeaderObj.AddComponent<RectTransform>().sizeDelta = new Vector2(cellWidth, cellHeight);
+
+            GameObject backObj = new GameObject("bg");
+            backObj.transform.SetParent(builtHeaderObj.transform, false);
+            Image backImg = backObj.AddComponent<Image>();
+            backImg.sprite = backgroundSprite;
+            backImg.type = Image.Type.Sliced;
+            backImg.color = new Color(0.5f, 0.5f, 0.5f, 0.12f);
+            backObj.GetComponent<RectTransform>().sizeDelta = new Vector2(cellWidth - cellDistance, cellHeight - cellDistance / 2);
+
+            GameObject titleObj = GameObject.Instantiate(TextObj, builtHeaderObj.transform);
+            titleObj.name = "title";
+            titleObj.transform.localScale = Vector3.one;
+            titleObj.GetComponent<RectTransform>().anchoredPosition3D = new Vector3(20, 0, 0);
+            Text titleText = titleObj.GetComponent<Text>();
+            titleText.supportRichText = true;
+            titleText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            titleText.fontSize = 18;
+            titleText.text = string.Format("已完成标题calc".Translate(), count) + "<size=13>\n" + "已完成区域说明".Translate() + "</size>";
+
+            builtHeaderObj.transform.SetParent(contentTrans, false);
+            builtHeaderObj.transform.localScale = Vector3.one;
+        }
+
         public void RefreshAll()
         {
             if (solution.targets.Count == 0 || solution.targets[0].itemId == 0)
@@ -1986,7 +2061,12 @@ namespace DSPCalculator.UI
                 GameObject.DestroyImmediate(uiItemNodes[i].obj);
             }
             ClearNodes();
-            int nodeOrder = 0;
+            if (builtHeaderObj != null)
+            {
+                GameObject.DestroyImmediate(builtHeaderObj);
+                builtHeaderObj = null;
+            }
+            List<ItemNode> builtNodes = new List<ItemNode>(); // 有已建成部分的节点，统一放到最下方的“已完成”区域
 
             if (solution.root.Count > 0 && !solution.userPreference.solveProliferators)
             {
@@ -2007,17 +2087,11 @@ namespace DSPCalculator.UI
                         if (!curNode.IsOre(solution.userPreference) || curNode.speedFromOre <= 0.001f)
                         {
                             // 将不认为是原矿的节点输出
-                            UIItemNode uiNode = new UIItemNode(curNode, this);
-                            uiItemNodes.Add(uiNode);
-                            uiItemNodeOrders[curNode.itemId] = nodeOrder;
-                            nodeOrder++;
+                            AddProductUINodeSplit(curNode, builtNodes);
                         }
                         else if (solution.userPreference.showMixBeltInfo) // 如果是混带信息，则原矿也要展示
                         {
-                            UIItemNode uiNode = new UIItemNode(curNode, this);
-                            uiItemNodes.Add(uiNode);
-                            uiItemNodeOrders[curNode.itemId] = nodeOrder;
-                            nodeOrder++;
+                            AddProductUINode(curNode, UIItemNode.PART_FULL);
                         }
                     }
                     stack.RemoveAt(stack.Count - 1);
@@ -2061,17 +2135,11 @@ namespace DSPCalculator.UI
                             if (!curNode.IsOre(solution.userPreference))
                             {
                                 // 将不认为是原矿的节点输出
-                                UIItemNode uiNode = new UIItemNode(curNode, this);
-                                uiItemNodes.Add(uiNode);
-                                uiItemNodeOrders[curNode.itemId] = nodeOrder;
-                                nodeOrder++;
+                                AddProductUINodeSplit(curNode, builtNodes);
                             }
                             else if (solution.userPreference.showMixBeltInfo) // 如果是混带信息，则原矿也要展示
                             {
-                                UIItemNode uiNode = new UIItemNode(curNode, this);
-                                uiItemNodes.Add(uiNode);
-                                uiItemNodeOrders[curNode.itemId] = nodeOrder;
-                                nodeOrder++;
+                                AddProductUINode(curNode, UIItemNode.PART_FULL);
                             }
                         }
                         stack.RemoveAt(stack.Count - 1);
@@ -2081,6 +2149,16 @@ namespace DSPCalculator.UI
                             stack.Add(curNode.children[c]);
                         }
                     }
+                }
+            }
+
+            // 最下方显示所有已建成的部分
+            if (builtNodes.Count > 0)
+            {
+                CreateBuiltHeader(builtNodes.Count);
+                foreach (ItemNode builtNode in builtNodes)
+                {
+                    AddProductUINode(builtNode, UIItemNode.PART_BUILT);
                 }
             }
         }
@@ -2186,6 +2264,42 @@ namespace DSPCalculator.UI
                     uiSideItemNodes.Add(emptyEnd);
                 }
             }
+
+            // 然后显示已建成产线的产出（仅作为内部已有产出的提示，不影响原材料需求）
+            Dictionary<int, double> builtOutputs = solution.GetBuiltOutputs();
+            // 按照产线中物品的顺序显示
+            List<int> builtItemIds = solution.itemNodes.Keys.Where(id => builtOutputs.ContainsKey(id)).ToList();
+            builtItemIds.AddRange(builtOutputs.Keys.Where(id => !solution.itemNodes.ContainsKey(id)));
+            builtItemIds.RemoveAll(id => builtOutputs[id] <= 0.001f);
+            if (builtItemIds.Count > 0)
+            {
+                UIItemNodeSimple labelBuilt = new UIItemNodeSimple("已建产线产出".Translate(), this);
+                uiSideItemNodes.Add(labelBuilt);
+                for (int i = 1; i < sideCellCountPerRow; i++)
+                {
+                    UIItemNodeSimple emptyBuilt = new UIItemNodeSimple("", this); // 是因为一行有多个元素，所以需要空来占位
+                    uiSideItemNodes.Add(emptyBuilt);
+                }
+                count = 0;
+                foreach (int itemId in builtItemIds)
+                {
+                    ItemNode node = new ItemNode(itemId, 0, solution);
+                    node.satisfiedSpeed = builtOutputs[itemId];
+                    UIItemNodeSimple uiBuiltNode = new UIItemNodeSimple(node, false, this);
+                    uiSideItemNodes.Add(uiBuiltNode);
+                    count++;
+                }
+                if (count % sideCellCountPerRow != 0) // 不足一行的用空填满
+                {
+                    int unfilled = sideCellCountPerRow - count % sideCellCountPerRow;
+                    for (int i = 0; i < unfilled; i++)
+                    {
+                        UIItemNodeSimple emptyEnd = new UIItemNodeSimple("", this);
+                        uiSideItemNodes.Add(emptyEnd);
+                    }
+                }
+            }
+
             // 然后显示副产物
             UIItemNodeSimple label2 = new UIItemNodeSimple("副产物和溢出产物".Translate(), this);
             uiSideItemNodes.Add(label2);
@@ -2475,8 +2589,11 @@ namespace DSPCalculator.UI
             }
             assemblersDemandObjs.Clear();
 
-            // 计算每种工厂数量
+            // 计算每种工厂的总需求数量和剩余（未建成）数量
+            UserPreference preference = solution.userPreference;
             Dictionary<int, long> counts = new Dictionary<int, long>();
+            Dictionary<int, long> remainCounts = new Dictionary<int, long>();
+            bool anyBuilt = false;
             foreach (var data in solution.recipeInfos)
             {
                 RecipeInfo recipeInfo = data.Value;
@@ -2484,12 +2601,25 @@ namespace DSPCalculator.UI
                     continue;
                 int assemblerItemId = recipeInfo.assemblerItemId;
                 long ceilingCount =(long) Math.Ceiling(recipeInfo.assemblerCount);
-                if (!solution.userPreference.finishedRecipes.ContainsKey(recipeInfo.ID) || !DSPCalculatorPlugin.OnlyCountUnfinishedFacilities.Value)
+                long remainCount = ceilingCount;
+                double builtAssemblerCount = preference.GetBuiltAssemblerCount(recipeInfo);
+                if (builtAssemblerCount > 0)
                 {
-                    if (!counts.ContainsKey(assemblerItemId))
-                        counts[assemblerItemId] = ceilingCount;
+                    anyBuilt = true;
+                    if (preference.IsRecipeFinished(recipeInfo))
+                        remainCount = 0;
                     else
-                        counts[assemblerItemId] += ceilingCount;
+                        remainCount = Math.Max(0, ceilingCount - Utils.CeilBuilt(builtAssemblerCount));
+                }
+                if (!counts.ContainsKey(assemblerItemId))
+                {
+                    counts[assemblerItemId] = ceilingCount;
+                    remainCounts[assemblerItemId] = remainCount;
+                }
+                else
+                {
+                    counts[assemblerItemId] += ceilingCount;
+                    remainCounts[assemblerItemId] += remainCount;
                 }
             }
 
@@ -2518,11 +2648,23 @@ namespace DSPCalculator.UI
                     assemblerCountTextObj.GetComponent<UIButton>().tips.corner = 2;
 
                     Text assemblerCountText = assemblerCountTextObj.GetComponent<Text>();
-                    assemblerCountText.text = "× " + Utils.KMG(count);
                     assemblerCountText.fontSize = 16;
                     assemblerCountText.raycastTarget = true;
-                    if (count > 9999)
-                        assemblerCountTextObj.GetComponent<UIButton>().tips.tipTitle = count.ToString("N0"); // 如果被KMG了，要在tip里显示完整数字
+                    if (anyBuilt) // 有已建成的部分时，显示 剩余 / 总需求
+                    {
+                        long remain = remainCounts[assemblerItemId];
+                        assemblerCountText.supportRichText = true;
+                        assemblerCountText.text = "× " + Utils.KMG(remain) + "<size=12>\n/ " + Utils.KMG(count) + "</size>";
+                        if (remain == 0)
+                            assemblerCountText.color = finishedProgressColor;
+                        assemblerCountTextObj.GetComponent<UIButton>().tips.tipTitle = "剩余calc".Translate() + " " + remain.ToString("N0") + " / " + "总需求calc".Translate() + " " + count.ToString("N0");
+                    }
+                    else
+                    {
+                        assemblerCountText.text = "× " + Utils.KMG(count);
+                        if (count > 9999)
+                            assemblerCountTextObj.GetComponent<UIButton>().tips.tipTitle = count.ToString("N0"); // 如果被KMG了，要在tip里显示完整数字
+                    }
 
                     // 加入列表
                     assemblersDemandObjs.Add(assemblerObj);
@@ -2905,10 +3047,7 @@ namespace DSPCalculator.UI
                 if(recipeInfo.count > 0.0001f)
                 {
                     totalFacilityCount += recipeInfo.assemblerCount;
-                    if(solution.userPreference.finishedRecipes.ContainsKey(item.Key))
-                    {
-                        finishedFacilityCount += recipeInfo.assemblerCount;
-                    }
+                    finishedFacilityCount += solution.userPreference.GetBuiltAssemblerCount(recipeInfo);
                 }
 
             }
@@ -2930,8 +3069,8 @@ namespace DSPCalculator.UI
             if (uiItemNodeOrders.ContainsKey(itemId))
             {
                 int order = uiItemNodeOrders[itemId];
-                int totalCount = uiItemNodeOrders.Count;
-                if (order >= 0 && order < uiItemNodeOrders.Count)
+                int totalCount = uiItemNodes.Count;
+                if (order >= 0 && order < uiItemNodes.Count)
                 {
                     // 跳转到目标位置，小于8不需要跳转
                     if (totalCount >= 8)

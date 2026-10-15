@@ -663,7 +663,22 @@ namespace DSPCalculator.Logic
             return 0;
         }
 
+        /// <summary>
+        /// 复制一个配方信息，但使用指定的倍率，用于只针对一部分（例如未建成或已建成的部分）生成蓝图
+        /// </summary>
+        public RecipeInfo CloneWithCount(double newCount)
+        {
+            RecipeInfo copied = new RecipeInfo(recipeNorm, userPreference);
+            copied.count = newCount;
+            return copied;
+        }
+
         public long GetIAInputCount()
+        {
+            return GetIAInputCount(count);
+        }
+
+        public long GetIAInputCount(double count)
         {
             double speedFactor = 1;
             if (IASpecializationType == 1 && GetSpecBuffLevel() > 0) 

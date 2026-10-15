@@ -51,7 +51,6 @@ namespace DSPCalculator
         public static ConfigEntry<bool> SingleWindow;
         public static ConfigEntry<int> MaxWindowsReservedAfterClose;
         public static ConfigEntry<bool> ClickToSwitchRecipeMode;
-        public static ConfigEntry<bool> OnlyCountUnfinishedFacilities;
         public static ConfigEntry<string> DefaultNewWindowData;
 
         //public static ConfigEntry<bool> assemblerNumberKMG; // 生产设施是否用使用最大千分位符号
@@ -75,7 +74,6 @@ namespace DSPCalculator
             MaxWindowsReservedAfterClose = Config.Bind<int>("config", "MaxWindowsReservedAfterClose", 5, "最后被关闭的几个窗口可以仍在后台保留其计算结果和玩家设置，而不被销毁或重置。若设置为0，则所有关闭的窗口都不会被销毁（不推荐）。The last few closed windows can still retain their calculation results and player settings in the background without being destroyed or reset. If set to 0, all closed windows will not be destroyed (not recommended).");
             ClickToSwitchRecipeMode = Config.Bind<bool>("config", "ClickToSwitchRecipeMode", false, "切换配方选取的模式会使用“点击循环切换”而非“点击然后选取配方”的模式。The mode for switching recipe selection will use the \"click loop switch\" instead of the \"click and select recipe\" mode.");
 
-            OnlyCountUnfinishedFacilities = Config.Bind<bool>("config", "OnlyCountUnfinishedFacilities", false, "如果设置为true，一旦你将某个物品产出勾选为已完成，其需求的生产设施将不再被计入右侧面板的生产设施需求总数。If set to true, once you check an item as finished, its required production facilities will no longer be included in the total production facility demand on the right panel.");
             DefaultNewWindowData = Config.Bind<string>("config", "DefaultNewWindowData", "", "不要编辑此项内容，除非你知道你在做什么。Never Edit this unless you know what you are doing.");
 
             Harmony.CreateAndPatchAll(typeof(DSPCalculatorPlugin));

@@ -92,6 +92,14 @@ namespace DSPCalculator
             
         }
 
+        /// <summary>
+        /// 已建成设施数量的向上取整，容忍浮点误差（避免3.0000001被取整为4）
+        /// </summary>
+        public static long CeilBuilt(double count)
+        {
+            return (long)Math.Ceiling(count - 1e-6);
+        }
+
         public static string KMGForceDigi(double num)
         {
             if (num < 10000)

@@ -29,7 +29,11 @@ namespace DSPCalculator.Logic
         public bool customizeAccMilli;
         public double incMilliOverride;
         public double accMilliOverride;
-        public Dictionary<int, int> finishedRecipes; // 用来记录那些已完成的配方。只有在修改目标产物或者速度的时候才会重置，更改增产剂等重新计算时均不会重置
+        public Dictionary<int, double> builtRecipes; // “本级完成”：记录每个配方单独标记的已建成量（与RecipeInfo.count同单位）。负数代表“按计划全部建成”（旧版本数据导入的已完成标记），会在求解后转换为实际数量。修改速度、增删目标时均不会重置
+        public Dictionary<int, Dictionary<int, double>> builtChains; // “整条完成”：key为点击完成的物品id，value为这条产线（含上游）占用的各配方数量。按产线分别记录，取消时可以原样撤销
+        public const double BUILT_FULL = -1; // builtRecipes中代表“按计划全部建成”的值
+        public const int BUILT_DATA_MARKER = 0x544C4955; // 导出数据末尾的已建量数据块标记
+        public const int BUILT_CHAIN_DATA_MARKER = 0x4E494843; // 导出数据末尾的整条完成数据块标记
         public bool roundUpAssemgblerNum; // 生产设施数量显示是否向上取整
         public bool solveProliferators; // 是否将增产剂作为生产线一并需要产出的物品，默认为否，即外部输入增产剂成品
 
@@ -51,7 +55,8 @@ namespace DSPCalculator.Logic
         {
             recipeConfigs = new Dictionary<int, RecipeConfig>();
             itemConfigs = new Dictionary<int, ItemConfig>();
-            finishedRecipes = new Dictionary<int, int>();
+            builtRecipes = new Dictionary<int, double>();
+            builtChains = new Dictionary<int, Dictionary<int, double>>();
             globalIncLevel = 0;
             globalIsInc = true;
             bluebuff = false;
@@ -83,7 +88,102 @@ namespace DSPCalculator.Logic
 
         public void ClearWhenChangeTarget()
         {
-            finishedRecipes.Clear();
+            builtRecipes.Clear();
+            builtChains.Clear();
+        }
+
+        /// <summary>
+        /// 获取配方当前有效的已建量（本级完成与所有整条完成之和，不超过计划量）
+        /// </summary>
+        public double GetBuiltCount(RecipeInfo recipeInfo)
+        {
+            if (recipeInfo == null)
+                return 0;
+            double built = 0;
+            if (builtRecipes.ContainsKey(recipeInfo.ID))
+            {
+                if (builtRecipes[recipeInfo.ID] < 0)
+                    return recipeInfo.count;
+                built += builtRecipes[recipeInfo.ID];
+            }
+            foreach (var chain in builtChains.Values)
+            {
+                if (chain.ContainsKey(recipeInfo.ID))
+                    built += chain[recipeInfo.ID];
+            }
+            if (built > recipeInfo.count)
+                return recipeInfo.count;
+            return built;
+        }
+
+        /// <summary>
+        /// 整条完成：将以itemId为终点的一条产线（含上游）中各配方的数量计入已建量，同一物品多次完成时累加
+        /// </summary>
+        public void AddBuiltChain(int itemId, Dictionary<int, double> recipeCounts)
+        {
+            if (!builtChains.ContainsKey(itemId))
+                builtChains[itemId] = new Dictionary<int, double>();
+            Dictionary<int, double> chain = builtChains[itemId];
+            foreach (var kv in recipeCounts)
+            {
+                if (chain.ContainsKey(kv.Key))
+                    chain[kv.Key] += kv.Value;
+                else
+                    chain[kv.Key] = kv.Value;
+            }
+        }
+
+        /// <summary>
+        /// 取消某配方的已建量（本级完成以及所有整条完成中的这一级），不影响上游
+        /// </summary>
+        public void RemoveBuiltRecipe(int recipeId)
+        {
+            builtRecipes.Remove(recipeId);
+            List<int> emptyChains = new List<int>();
+            foreach (var kv in builtChains)
+            {
+                kv.Value.Remove(recipeId);
+                if (kv.Value.Count == 0)
+                    emptyChains.Add(kv.Key);
+            }
+            foreach (int key in emptyChains)
+                builtChains.Remove(key);
+        }
+
+        /// <summary>
+        /// 已建成的生产设施数量（按当前设施设置换算，未取整）
+        /// </summary>
+        public double GetBuiltAssemblerCount(RecipeInfo recipeInfo)
+        {
+            if (recipeInfo == null || recipeInfo.count <= 0)
+                return 0;
+            double built = GetBuiltCount(recipeInfo);
+            if (built >= recipeInfo.count)
+                return recipeInfo.assemblerCount;
+            return recipeInfo.assemblerCount * built / recipeInfo.count;
+        }
+
+        /// <summary>
+        /// 配方是否已按计划全部建成
+        /// </summary>
+        public bool IsRecipeFinished(RecipeInfo recipeInfo)
+        {
+            if (recipeInfo == null || recipeInfo.count <= 0)
+                return false;
+            return GetBuiltCount(recipeInfo) >= recipeInfo.count * (1 - 1e-6);
+        }
+
+        /// <summary>
+        /// 将“按计划全部建成”的标记转换为当前计划的实际数量，这样之后计划量增加时，这部分只算作部分建成
+        /// </summary>
+        public void ResolveFullBuiltMarks(Dictionary<int, RecipeInfo> recipeInfos)
+        {
+            List<int> keys = builtRecipes.Where(kv => kv.Value < 0).Select(kv => kv.Key).ToList();
+            foreach (int key in keys)
+            {
+                if (recipeInfos.ContainsKey(key) && recipeInfos[key].count > 0)
+                    builtRecipes[key] = recipeInfos[key].count;
+            }
         }
 
         public UserPreference ShallowCopy()
@@ -91,7 +191,8 @@ namespace DSPCalculator.Logic
             UserPreference copied = new UserPreference();
             copied.recipeConfigs = recipeConfigs;
             copied.itemConfigs = itemConfigs;
-            copied.finishedRecipes = finishedRecipes;
+            copied.builtRecipes = builtRecipes;
+            copied.builtChains = builtChains;
             copied.globalIncLevel = globalIncLevel;
             copied.globalIsInc = globalIsInc;
             copied.bluebuff = bluebuff;
@@ -122,10 +223,15 @@ namespace DSPCalculator.Logic
             {
                 copied.itemConfigs[itemConfig.Key] = new ItemConfig(itemConfig.Value);
             }
-            copied.finishedRecipes = new Dictionary<int, int>();
-            foreach(var finishedRecipe in finishedRecipes)
+            copied.builtRecipes = new Dictionary<int, double>();
+            foreach(var builtRecipe in builtRecipes)
             {
-                copied.finishedRecipes[finishedRecipe.Key] = finishedRecipe.Value;
+                copied.builtRecipes[builtRecipe.Key] = builtRecipe.Value;
+            }
+            copied.builtChains = new Dictionary<int, Dictionary<int, double>>();
+            foreach (var chain in builtChains)
+            {
+                copied.builtChains[chain.Key] = new Dictionary<int, double>(chain.Value);
             }
             copied.globalIncLevel = globalIncLevel;
             copied.globalIsInc = globalIsInc;
@@ -219,7 +325,8 @@ namespace DSPCalculator.Logic
             }
         }
      
-        public void Export(BinaryWriter w)
+        /// <param name="recipeInfos">当前求解结果，用于为旧版本写出“已完成”标记，可为null</param>
+        public void Export(BinaryWriter w, Dictionary<int, RecipeInfo> recipeInfos = null)
         {
             int recipeConfigCount = recipeConfigs.Count;
             w.Write(recipeConfigCount);
@@ -253,11 +360,26 @@ namespace DSPCalculator.Logic
             w.Write(customizeAccMilli);
             w.Write(incMilliOverride);
             w.Write(accMilliOverride);
-            w.Write(finishedRecipes.Count);
-            foreach (var KV in finishedRecipes)
+            // 旧格式的已完成标记（仅写出全部建成的配方），供旧版本读取
+            HashSet<int> finishedIds = new HashSet<int>();
+            foreach (var KV in builtRecipes)
             {
-                w.Write(KV.Key);
-                w.Write(KV.Value);
+                if (KV.Value < 0)
+                    finishedIds.Add(KV.Key);
+            }
+            if (recipeInfos != null)
+            {
+                foreach (var KV in recipeInfos)
+                {
+                    if (IsRecipeFinished(KV.Value))
+                        finishedIds.Add(KV.Key);
+                }
+            }
+            w.Write(finishedIds.Count);
+            foreach (int id in finishedIds)
+            {
+                w.Write(id);
+                w.Write(1);
             }
             w.Write(roundUpAssemgblerNum);
             w.Write(solveProliferators);
@@ -271,13 +393,34 @@ namespace DSPCalculator.Logic
             w.Write(bpSorterTechLimit);
             w.Write(bpStackSetting);
             w.Write(bpConnectBlackboxCoater);
+            // 已建量数据块追加在末尾，旧版本读取时会忽略
+            w.Write(BUILT_DATA_MARKER);
+            w.Write(builtRecipes.Count);
+            foreach (var KV in builtRecipes)
+            {
+                w.Write(KV.Key);
+                w.Write(KV.Value);
+            }
+            w.Write(BUILT_CHAIN_DATA_MARKER);
+            w.Write(builtChains.Count);
+            foreach (var chain in builtChains)
+            {
+                w.Write(chain.Key);
+                w.Write(chain.Value.Count);
+                foreach (var KV in chain.Value)
+                {
+                    w.Write(KV.Key);
+                    w.Write(KV.Value);
+                }
+            }
         }
         public void Import(BinaryReader r)
         {
             recipeConfigs.Clear();
             itemConfigs.Clear();
             globalAssemblerIdByType.Clear();
-            finishedRecipes.Clear();
+            builtRecipes.Clear();
+            builtChains.Clear();
             int count = r.ReadInt32();
             for (int i = 0; i < count; i++)
             {
@@ -316,8 +459,8 @@ namespace DSPCalculator.Logic
             for (int i = 0; i < count; i++)
             {
                 int key = r.ReadInt32();
-                int value = r.ReadInt32();
-                finishedRecipes[key] = value;
+                r.ReadInt32();
+                builtRecipes[key] = BUILT_FULL; // 旧格式只有“已完成”标记，视为按计划全部建成
             }
             roundUpAssemgblerNum = r.ReadByte() > 0;
             solveProliferators = r.ReadByte() > 0;
@@ -331,6 +474,36 @@ namespace DSPCalculator.Logic
             bpSorterTechLimit = r.ReadByte() > 0;
             bpStackSetting = r.ReadInt32();
             bpConnectBlackboxCoater = r.ReadByte() > 0;
+            // 新格式的已建量数据块（旧数据没有这部分）
+            Stream stream = r.BaseStream;
+            if (stream.CanSeek && stream.Length - stream.Position >= 8 && r.ReadInt32() == BUILT_DATA_MARKER)
+            {
+                builtRecipes.Clear();
+                count = r.ReadInt32();
+                for (int i = 0; i < count; i++)
+                {
+                    int key = r.ReadInt32();
+                    double value = r.ReadDouble();
+                    builtRecipes[key] = value;
+                }
+                if (stream.Length - stream.Position >= 8 && r.ReadInt32() == BUILT_CHAIN_DATA_MARKER)
+                {
+                    builtChains.Clear();
+                    count = r.ReadInt32();
+                    for (int i = 0; i < count; i++)
+                    {
+                        int itemId = r.ReadInt32();
+                        int recipeCount = r.ReadInt32();
+                        Dictionary<int, double> chain = new Dictionary<int, double>();
+                        for (int j = 0; j < recipeCount; j++)
+                        {
+                            int key = r.ReadInt32();
+                            chain[key] = r.ReadDouble();
+                        }
+                        builtChains[itemId] = chain;
+                    }
+                }
+            }
         }
     }
 

@@ -296,8 +296,8 @@ namespace DSPCalculator.UI
             if (canLocateAndIsMainProduct)
             {
                 int order = parentCalcWindow.uiItemNodeOrders[itemId];
-                int totalCount = parentCalcWindow.uiItemNodeOrders.Count;
-                if (order >= 0 && order < parentCalcWindow.uiItemNodeOrders.Count)
+                int totalCount = parentCalcWindow.uiItemNodes.Count;
+                if (order >= 0 && order < parentCalcWindow.uiItemNodes.Count)
                 {
                     // 跳转到目标位置，小于8不需要跳转
                     if (totalCount >= 8)
