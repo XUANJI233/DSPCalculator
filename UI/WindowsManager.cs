@@ -63,6 +63,8 @@ namespace DSPCalculator.UI
             if(inGameWindows == null)
                 inGameWindows = GameObject.Find("UI Root/Overlay Canvas/In Game/Windows").transform;
 
+            WindowsPersistence.OnUpdate(); // 读档/新游戏后销毁旧窗口，并逐帧恢复存档中的窗口
+
             int childCount = inGameWindows.childCount;
             for (int i = 1; i <childCount; i++)
             {

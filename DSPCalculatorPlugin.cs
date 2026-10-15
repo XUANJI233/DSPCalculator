@@ -80,6 +80,7 @@ namespace DSPCalculator
             Harmony.CreateAndPatchAll(typeof(RecipePickerPatcher));
             Harmony.CreateAndPatchAll(typeof(UIHotkeySettingPatcher));
             Harmony.CreateAndPatchAll(typeof(WindowsManager));
+            Harmony.CreateAndPatchAll(typeof(WindowsPersistence));
             if (TestPatchers.enabled)
             {
                 Harmony.CreateAndPatchAll(typeof(TestPatchers));

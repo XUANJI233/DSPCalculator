@@ -111,6 +111,7 @@
     <Compile Include="Compatibility\CompatManager.cs" />
     <Compile Include="DSPCalculatorPlugin.cs" />
     <Compile Include="Logic\CalcDB.cs" />
+    <Compile Include="Logic\CalcSaveFile.cs" />
     <Compile Include="Logic\ItemNode.cs" />
     <Compile Include="Logic\RecipeInfo.cs" />
     <Compile Include="Logic\RecipePickerPatcher.cs" />
@@ -125,6 +126,7 @@
     <Compile Include="UI\UINode.cs" />
     <Compile Include="UI\UIPauseBarPatcher.cs" />
     <Compile Include="UI\WindowsManager.cs" />
+    <Compile Include="UI\WindowsPersistence.cs" />
     <Compile Include="Utils\API.cs" />
     <Compile Include="Utils\Localizations.cs" />
     <Compile Include="Utils\Utils.cs" />
