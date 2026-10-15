@@ -152,6 +152,7 @@ namespace DSPCalculator.UI
 
         public static UICalcWindow OpenOne(bool forceNewWindow = false)
         {
+            WindowsPersistence.FinishPendingRestore(); // 读档后窗口还没恢复完时，先全部恢复
             UIPauseBarPatcher.Init();
             temporaryCloseBecausePasteBp = false;
 
@@ -172,6 +173,7 @@ namespace DSPCalculator.UI
 
         public static UICalcWindow OpenOne(bool forceNewWindow, float offsetX, float offsetY)
         {
+            WindowsPersistence.FinishPendingRestore(); // 读档后窗口还没恢复完时，先全部恢复
             UIPauseBarPatcher.Init();
             temporaryCloseBecausePasteBp = false;
 

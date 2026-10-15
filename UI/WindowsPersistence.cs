@@ -27,14 +27,7 @@ namespace DSPCalculator.UI
         /// </summary>
         public static void OnUpdate()
         {
-            bool doReset;
-            lock (sync)
-            {
-                doReset = resetRequested;
-                resetRequested = false;
-            }
-            if (doReset)
-                DestroyAllWindows();
+            ProcessReset();
 
             if (!CanRestore())
             {
@@ -48,6 +41,38 @@ namespace DSPCalculator.UI
             }
 
             // 每帧恢复一个窗口，避免读档时卡顿
+            RestoreNext();
+        }
+
+        /// <summary>
+        /// 由WindowsManager.OpenOne调用：读档后窗口还没恢复完时玩家就打开了窗口，先把剩余的窗口全部恢复，
+        /// 使“重新打开最后关闭的窗口”等行为与存档前一致，也避免新开的窗口被随后恢复的窗口压在下面
+        /// </summary>
+        public static void FinishPendingRestore()
+        {
+            ProcessReset();
+            if (!CanRestore())
+                return;
+            while (RestoreNext()) { }
+        }
+
+        static void ProcessReset()
+        {
+            bool doReset;
+            lock (sync)
+            {
+                doReset = resetRequested;
+                resetRequested = false;
+            }
+            if (doReset)
+                DestroyAllWindows();
+        }
+
+        /// <summary>
+        /// 恢复一个待恢复的窗口，没有待恢复的窗口时返回false
+        /// </summary>
+        static bool RestoreNext()
+        {
             CalcWindowRecord rec = null;
             lock (sync)
             {
@@ -57,17 +82,17 @@ namespace DSPCalculator.UI
                     pendingRecords.RemoveAt(0);
                 }
             }
-            if (rec != null)
+            if (rec == null)
+                return false;
+            try
             {
-                try
-                {
-                    RestoreWindow(rec);
-                }
-                catch (Exception ex)
-                {
-                    Utils.logger.LogError("Failed to restore calculator window: " + ex.ToString());
-                }
+                RestoreWindow(rec);
             }
+            catch (Exception ex)
+            {
+                Utils.logger.LogError("Failed to restore calculator window: " + ex.ToString());
+            }
+            return true;
         }
 
         static bool CanRestore()
@@ -345,7 +370,8 @@ namespace DSPCalculator.UI
         {
             string saveName = loadingSaveName;
             loadingSaveName = null;
-            if (!__result || string.IsNullOrEmpty(saveName))
+            // 主菜单背景的演示存档会被临时写成_autosave_tmp再读取，不属于玩家存档
+            if (!__result || string.IsNullOrEmpty(saveName) || DSPGame.IsMenuDemo)
                 return;
             try
             {
