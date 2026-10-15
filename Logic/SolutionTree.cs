@@ -38,6 +38,7 @@ namespace DSPCalculator.Logic
         public Dictionary<int, double> proliferatorCountSelfSprayed; // 如果是自喷涂过的增产剂需求量
 
         public bool tempNotShrinkRoot; // 在主产物首次发现溢出时(tempNotShrinkRoot为false)，直接暴力修改targetSpeed然后重新计算，修改后置tempNotShrinkRoot为true。
+        public bool pruneBuiltAfterSolve = false; // 只有窗口的主求解器为true。增产剂、整条完成的子求解器与主求解器共享完成记录，不能用子求解结果清理
 
         public bool unsolved { get { return nodeStack.Count > 0; } }
 
@@ -230,6 +231,10 @@ namespace DSPCalculator.Logic
                     {
                         CalcProliferatorInProductLine();
                     }
+
+                    // 清理不在当前计划中的完成记录（例如切换了目标产物）。目标速度为0时可能只是正在输入，此时不清理，以免丢失进度
+                    if (pruneBuiltAfterSolve && targets.All(t => t.itemId > 0 && t.speed > 0))
+                        userPreference.PruneBuilt(itemNodes, recipeInfos);
 
                     return true;
                 }

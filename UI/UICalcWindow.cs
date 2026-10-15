@@ -185,6 +185,7 @@ namespace DSPCalculator.UI
             TryInitStaticPrefabs();
 
             solution = new SolutionTree();
+            solution.pruneBuiltAfterSolve = true; // 窗口的主求解器：求解后清理不在计划中的完成记录
             uiItemNodes = new List<UIItemNode>();
             uiSideItemNodes = new List<UINode>();
             proliferatorUsedButtons = new Dictionary<int, UIButton>();

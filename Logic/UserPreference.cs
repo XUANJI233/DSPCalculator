@@ -134,6 +134,35 @@ namespace DSPCalculator.Logic
         }
 
         /// <summary>
+        /// 求解后清理不在当前计划中的完成记录：切换、删除目标产物或者更换配方后，属于旧产线的完成标记会被自动取消。
+        /// 整条完成的记录如果终点物品已不在产线中（或换了配方），整条删除；本级完成的记录如果配方已不在计划中则删除
+        /// </summary>
+        public void PruneBuilt(Dictionary<int, ItemNode> itemNodes, Dictionary<int, RecipeInfo> recipeInfos)
+        {
+            Func<int, bool> inPlan = recipeId => recipeInfos.ContainsKey(recipeId) && recipeInfos[recipeId].count > 1e-9;
+            foreach (int recipeId in builtRecipes.Keys.ToList())
+            {
+                if (!inPlan(recipeId))
+                    builtRecipes.Remove(recipeId);
+            }
+            foreach (int rootItemId in builtChains.Keys.ToList())
+            {
+                Dictionary<int, double> chain = builtChains[rootItemId];
+                RecipeInfo rootRecipe = itemNodes.ContainsKey(rootItemId) ? itemNodes[rootItemId].mainRecipe : null;
+                if (rootRecipe == null || !inPlan(rootRecipe.ID) || !chain.ContainsKey(rootRecipe.ID))
+                {
+                    builtChains.Remove(rootItemId);
+                    continue;
+                }
+                foreach (int recipeId in chain.Keys.ToList())
+                {
+                    if (!inPlan(recipeId))
+                        chain.Remove(recipeId);
+                }
+            }
+        }
+
+        /// <summary>
         /// 取消某配方的已建量（本级完成以及所有整条完成中的这一级），不影响上游
         /// </summary>
         public void RemoveBuiltRecipe(int recipeId)
